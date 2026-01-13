@@ -446,8 +446,7 @@ def main():
             "HTML 코드 입력",
             value=st.session_state['html_input_value'],
             placeholder="여기에 HTML 코드를 붙여넣으세요...",
-            height=300,
-            key="html_input_area"
+            height=300
         )
         # 입력값을 session_state에 저장
         st.session_state['html_input_value'] = html_input
@@ -455,7 +454,8 @@ def main():
     with col_clear:
         st.write("")  # 공간 맞추기
         st.write("")  # 공간 맞추기
-        if st.button("🗑️ Clear", use_container_width=True):
+        if st.button("🗑️ Clear", use_container_width=True, key="clear_button"):
+            # session_state 초기화
             st.session_state['html_input_value'] = ""
             st.rerun()
     
