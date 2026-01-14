@@ -432,31 +432,38 @@ def parseHTML(html_content):
 def main():
     st.title("📊 API 프로모션 계산")
     st.markdown("### HTML 데이터 입력")
-    
     st.info("**사용 방법:** 웹페이지에서 전체 HTML 코드를 복사하여 아래에 붙여넣으세요.")
+    
+    # HTML input key counter 초기화
+    if 'html_input_key_counter' not in st.session_state:
+        st.session_state['html_input_key_counter'] = 0
     
     # HTML 입력과 Clear 버튼을 같은 행에 배치
     col_input, col_clear = st.columns([5, 1])
     with col_input:
-        # session_state 초기화
-        if 'html_input_value' not in st.session_state:
-            st.session_state['html_input_value'] = ""
-        
+        html_input_key = f"html_input_value_{st.session_state['html_input_key_counter']}"
         html_input = st.text_area(
             "HTML 코드 입력",
-            value=st.session_state['html_input_value'],
             placeholder="여기에 HTML 코드를 붙여넣으세요...",
-            height=300
+            height=300,
+            key=html_input_key
         )
-        # 입력값을 session_state에 저장
-        st.session_state['html_input_value'] = html_input
     
     with col_clear:
         st.write("")  # 공간 맞추기
         st.write("")  # 공간 맞추기
         if st.button("🗑️ Clear", use_container_width=True, key="clear_button"):
-            # session_state 초기화
-            st.session_state['html_input_value'] = ""
+            # 키 카운터를 증가시켜 새로운 위젯으로 재생성
+            st.session_state['html_input_key_counter'] += 1
+            # 관련된 데이터도 초기화
+            if 'parsed_data' in st.session_state:
+                del st.session_state['parsed_data']
+            if 'discount_rate' in st.session_state:
+                st.session_state['discount_rate'] = 0
+            if 'exchange_rate' in st.session_state:
+                st.session_state['exchange_rate'] = 0
+            if 'commission_rates' in st.session_state:
+                st.session_state['commission_rates'] = []
             st.rerun()
     
     # 할인율, 환율, 수수료 입력
@@ -516,6 +523,23 @@ def main():
         discount_rate = st.session_state.get('discount_rate', 0)
         exchange_rate = st.session_state.get('exchange_rate', 0)
         commission_rates = st.session_state.get('commission_rates', [])
+        
+        # 결과 영역 상단에 Clear 버튼 추가
+        col_result_title, col_clear_result = st.columns([5, 1])
+        with col_clear_result:
+            st.write("")  # 공간 맞추기
+            if st.button("🗑️ Clear All", use_container_width=True, key="clear_result_button"):
+                # 모든 session_state 초기화
+                st.session_state['html_input_key_counter'] += 1
+                if 'parsed_data' in st.session_state:
+                    del st.session_state['parsed_data']
+                if 'discount_rate' in st.session_state:
+                    st.session_state['discount_rate'] = 0
+                if 'exchange_rate' in st.session_state:
+                    st.session_state['exchange_rate'] = 0
+                if 'commission_rates' in st.session_state:
+                    st.session_state['commission_rates'] = []
+                st.rerun()
         
         # 수수료가 없으면 경고 표시
         if not commission_rates:
