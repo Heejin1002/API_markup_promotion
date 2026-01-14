@@ -432,7 +432,7 @@ def parseHTML(html_content):
 def main():
     st.title("📊 API 프로모션 계산")
     st.markdown("### HTML 데이터 입력")
-    st.info("**사용 방법:** 웹페이지에서 전체 HTML 코드를 복사하여 아래에 붙여넣으세요.")
+    st.info("**사용 방법:** 웹페이지에서 원하는 가격 테이블의 HTML Element 코드를 복사하여 아래에 붙여 넣으세요.")
     
     # HTML input key counter 초기화
     if 'html_input_key_counter' not in st.session_state:
@@ -466,31 +466,28 @@ def main():
                 st.session_state['commission_rates'] = []
             st.rerun()
     
-    # 할인율, 환율, 수수료 입력
+    # 수수료, 환율, 할인율 입력
     col1, col2, col3 = st.columns(3)
     with col1:
-        discount_rate = st.number_input(
-            "할인율 (%)",
-            min_value=0.0,
-            max_value=100.0,
-            value=0.0,
-            step=0.1,
-            help="할인율을 입력하면 최종 판매가와 마진이 자동으로 계산됩니다."
-        )
-    with col2:
-        exchange_rate = st.number_input(
-            "환율 (THB → KRW)",
-            min_value=0.0,
-            value=0.0,
-            step=0.01,
-            help="태국 바트(THB)를 원화(KRW)로 변환할 환율을 입력하세요. (예: 1 THB = 36.5 KRW)"
-        )
-    with col3:
         commission_rates_input = st.text_input(
             "수수료 (%)",
             value="",
-            placeholder="6.6,10,11",
+            placeholder="0.00",
             help="수수료를 쉼표로 구분하여 입력하세요. (예: 6.6,10,11)"
+        )
+    with col2:
+        exchange_rate_input = st.text_input(
+            "환율 (THB → KRW)",
+            value="",
+            placeholder="0.00",
+            help="태국 바트(THB)를 원화(KRW)로 변환할 환율을 입력하세요. (예: 1 THB = 36.5 KRW)"
+        )
+    with col3:
+        discount_rate_input = st.text_input(
+            "할인율 (%)",
+            value="",
+            placeholder="0.00",
+            help="할인율을 입력하면 최종 판매가와 마진이 자동으로 계산됩니다."
         )
     
     if st.button("🔢 계산하기", type="primary"):
@@ -502,6 +499,19 @@ def main():
             if error:
                 st.error(error)
             elif parsed_data:
+                # 환율과 할인율 파싱
+                try:
+                    exchange_rate = float(exchange_rate_input.strip()) if exchange_rate_input.strip() else 0.0
+                except:
+                    exchange_rate = 0.0
+                    st.warning("환율 입력값이 올바르지 않습니다. 0.0으로 설정됩니다.")
+                
+                try:
+                    discount_rate = float(discount_rate_input.strip()) if discount_rate_input.strip() else 0.0
+                except:
+                    discount_rate = 0.0
+                    st.warning("할인율 입력값이 올바르지 않습니다. 0.0으로 설정됩니다.")
+                
                 st.session_state['parsed_data'] = parsed_data
                 st.session_state['discount_rate'] = discount_rate
                 st.session_state['exchange_rate'] = exchange_rate
