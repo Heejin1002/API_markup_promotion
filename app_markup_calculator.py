@@ -350,7 +350,8 @@ def parseHTML(html_content):
                     adult_sale_krw_match = re.search(r'name="rate\.\d+\.adult\.sale\.monkey\.KRW"[^>]*value="(\d+)"', row)
                     adult_sale_krw = int(adult_sale_krw_match.group(1)) if adult_sale_krw_match else 0
                     
-                    if adult_nett > 0 and adult_sale_mk > 0:
+                    # program_id와 program_name이 있고, 세일가가 있으면 추가 (넷가가 0이어도 포함)
+                    if program_id and option_name and adult_sale_mk > 0:
                         programs.append({
                             'rate_id': rate_id,
                             'program_id': program_id,
@@ -363,22 +364,26 @@ def parseHTML(html_content):
                         })
         else:
             # 일반 투어 구조: tr 단위로 파싱
-            program_pattern = re.compile(r'<input type="hidden" name="program_id" value="(\d+)"[^>]*>[\s\S]*?<b>([^<]+)</b>')
-            program_infos = []
-            for match in program_pattern.finditer(html_content):
-                program_infos.append({
-                    'id': match.group(1),
-                    'name': match.group(2).strip()
-                })
+            # 각 <tr child-root="tour_rate.rateJson">를 찾아서 파싱
+            tr_pattern = re.compile(r'<tr child-root="tour_rate\.rateJson">([\s\S]*?)</tr>')
+            tr_matches = tr_pattern.findall(html_content)
             
-            # 각 프로그램의 가격 정보 추출
-            rows = html_content.split('<tr child-root="tour_rate.rateJson">')[1:]
-            
-            for index, row in enumerate(rows):
-                if index >= len(program_infos):
-                    break
+            for row in tr_matches:
+                # 각 tr 안에서 program_id 추출
+                program_id_match = re.search(r'<input type="hidden" name="program_id" value="(\d+)"', row)
+                program_id = program_id_match.group(1) if program_id_match else ''
                 
-                program_info = program_infos[index]
+                # 각 tr 안에서 program_name 추출 (program_id 다음에 나오는 <b> 태그 안의 텍스트)
+                # program_id가 있는 부분 이후에서 <b> 태그 찾기
+                if program_id_match:
+                    # program_id 이후의 텍스트에서 첫 번째 <b> 태그 찾기
+                    after_program_id = row[program_id_match.end():]
+                    program_name_match = re.search(r'<b>([^<]+)</b>', after_program_id)
+                    program_name = program_name_match.group(1).strip() if program_name_match else ''
+                else:
+                    # program_id가 없으면 전체 row에서 <b> 태그 찾기
+                    program_name_match = re.search(r'<b>([^<]+)</b>', row)
+                    program_name = program_name_match.group(1).strip() if program_name_match else ''
                 
                 # Net 가격 추출
                 adult_nett_match = re.search(r'name="adult\.nett"[^>]*value="(\d+)"', row)
@@ -401,11 +406,12 @@ def parseHTML(html_content):
                 adult_sale_krw = int(adult_sale_krw_match.group(1)) if adult_sale_krw_match else 0
                 child_sale_krw = int(child_sale_krw_match.group(1)) if child_sale_krw_match else 0
                 
-                if adult_nett > 0 and adult_sale_mk > 0:
+                # program_id와 program_name이 있고, 세일가가 있으면 추가 (넷가가 0이어도 포함)
+                if program_id and program_name and adult_sale_mk > 0:
                     programs.append({
                         'rate_id': rate_id,
-                        'program_id': program_info['id'],
-                        'program_name': program_info['name'],
+                        'program_id': program_id,
+                        'program_name': program_name,
                         'site': 'mk',
                         'rates': [
                             calculateRate('성인', adult_nett, adult_sale_mk, adult_sale_krw > 0),
@@ -464,6 +470,8 @@ def main():
                 st.session_state['exchange_rate'] = 0
             if 'commission_rates' in st.session_state:
                 st.session_state['commission_rates'] = []
+            if 'net_price_percentage' in st.session_state:
+                st.session_state['net_price_percentage'] = 0
             st.rerun()
     
     # 수수료, 환율, 할인율 입력
@@ -549,7 +557,12 @@ def main():
                     st.session_state['exchange_rate'] = 0
                 if 'commission_rates' in st.session_state:
                     st.session_state['commission_rates'] = []
+                if 'net_price_percentage' in st.session_state:
+                    st.session_state['net_price_percentage'] = 0
                 st.rerun()
+        
+        # 세일가 기준 넷가% 설정 (Net가가 0인 경우용)
+        net_price_percentage = st.session_state.get('net_price_percentage', 0)
         
         # 수수료가 없으면 경고 표시
         if not commission_rates:
@@ -572,24 +585,32 @@ def main():
         st.markdown("### 설정")
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.info(f"**할인율:** {discount_rate}%")
+            st.info(f"**수수료:** {', '.join([f'{x}%' for x in commission_rates])}")
         with col2:
             if exchange_rate > 0:
                 st.info(f"**환율:** 1 THB = {exchange_rate:,.2f} KRW")
             else:
                 st.info("**환율:** 미설정")
         with col3:
-            st.info(f"**수수료:** {', '.join([f'{x}%' for x in commission_rates])}")
+            st.info(f"**할인율:** {discount_rate}%")
         
         st.markdown("---")
         
         # 테이블 데이터 생성 - 수수료를 동적으로 처리
         table_rows = []
+        net_price_percentage = st.session_state.get('net_price_percentage', 0)
+        
         for program in parsed_data['programs']:
             for rate in program['rates']:
-                if rate['net_price'] > 0 and rate['sale_price'] > 0:
+                # net_price_percentage가 설정되어 있으면 세일가 기준으로 넷가 계산 (넷가가 0이 아니어도 적용)
+                calculated_net_price = rate['net_price']
+                if rate['sale_price'] > 0 and net_price_percentage > 0:
+                    calculated_net_price = round(rate['sale_price'] * (net_price_percentage / 100))
+                
+                # net_price > 0 또는 (sale_price > 0이고 net_price_percentage가 설정된 경우) 테이블에 포함
+                if (calculated_net_price > 0 or rate['sale_price'] > 0) and rate['sale_price'] > 0:
                     discount = discount_rate / 100
-                    net_krw = rate['net_price'] * exchange_rate if exchange_rate > 0 else 0
+                    net_krw = calculated_net_price * exchange_rate if exchange_rate > 0 else 0
                     
                     # 기본 행 데이터
                     row_data = {
@@ -600,7 +621,7 @@ def main():
                         '옵션명': program['program_name'],
                         '사이트': program['site'],
                         '대상': rate['pax_type'],
-                        '넷가(바트)': rate['net_price'],
+                        '넷가(바트)': calculated_net_price,
                         '세일가(바트)': rate['sale_price']
                     }
                     
@@ -616,8 +637,8 @@ def main():
                         has_krw_price = False  # KRW 가격이 있는지 확인 필요 (parseHTML에서 확인)
                         required_markup = 0
                         if supply_price_temp > 0 and not has_krw_price:
-                            if supply_price_temp < rate['net_price']:
-                                required_markup = math.ceil((rate['net_price'] / supply_price_temp - 1) * 100)
+                            if supply_price_temp < calculated_net_price:
+                                required_markup = math.ceil((calculated_net_price / supply_price_temp - 1) * 100)
                         
                         # 필요 마크업을 사용해 최종 세일가 계산
                         req_mk = required_markup / 100
@@ -672,7 +693,36 @@ def main():
                 krw_cols = [col for col in df.columns if '(원화)' in col]
                 df = df.drop(columns=krw_cols)
             
-            st.markdown(f"### 결과 테이블 (총 {len(df)}개 항목)")
+            # 결과 테이블 제목과 넷가% 설정 입력칸, 새로고침 버튼
+            col_title, col_net_percent, col_refresh = st.columns([3, 2, 1])
+            with col_title:
+                st.markdown(f"### 결과 테이블 (총 {len(df)}개 항목)")
+            with col_net_percent:
+                net_price_percent_input = st.text_input(
+                    "세일가 기준 넷가%",
+                    value=str(net_price_percentage) if net_price_percentage > 0 else "",
+                    placeholder="예: 70",
+                    help="세일가의 몇 %로 넷가를 설정할지 입력하세요.",
+                    key="net_price_percent_input"
+                )
+            with col_refresh:
+                st.write("")  # 공간 맞추기
+                if st.button("🔄 적용", use_container_width=True, key="refresh_table_button"):
+                    # 넷가% 파싱 및 저장
+                    try:
+                        if net_price_percent_input.strip():
+                            new_percentage = float(net_price_percent_input.strip())
+                            if 0 < new_percentage <= 100:
+                                st.session_state['net_price_percentage'] = new_percentage
+                            else:
+                                st.warning("넷가%는 0보다 크고 100 이하여야 합니다.")
+                                st.session_state['net_price_percentage'] = 0
+                        else:
+                            st.session_state['net_price_percentage'] = 0
+                    except:
+                        st.warning("넷가% 입력값이 올바르지 않습니다.")
+                        st.session_state['net_price_percentage'] = 0
+                    st.rerun()
             
             # 표시용 데이터프레임 (숫자 포맷팅)
             display_df = df.copy()
